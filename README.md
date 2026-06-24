@@ -74,8 +74,8 @@ Raw Data (CSV)
 |---|---|
 | Dataset acquired | Done |
 | S3 ingestion script | Done |
-| Data pipeline (S3 → PostgreSQL) | In progress |
-| Feature engineering | Pending |
+| Data pipeline (S3 → PostgreSQL) | Done |
+| Feature engineering | In progress |
 | XGBoost model training | Pending |
 | FastAPI inference service | Pending |
 | Docker + ECS deployment | Pending |
