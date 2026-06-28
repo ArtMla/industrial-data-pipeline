@@ -1,5 +1,18 @@
 .env
 __pycache__/
 *.pyc
+*.pyo
 .DS_Store
+.venv/
+*.egg-info/
+.model_version
+
+# Data
 data/raw/
+data/processed/
+mlruns/
+docs/confusion_matrix.png
+
+# Node (dashboard)
+dashboard/node_modules/
+dashboard/.next/

@@ -1,0 +1,13 @@
+[project]
+name = "predictive-maintenance-platform"
+version = "0.1.0"
+description = "Industrial Predictive Maintenance Platform — AI4I 2020 dataset"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 100
+exclude = ["dashboard/", ".venv/", "node_modules/", "src/"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

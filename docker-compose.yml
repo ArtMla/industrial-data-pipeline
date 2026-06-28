@@ -1,0 +1,64 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: pred_maint
+      POSTGRES_USER: pred_maint
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-localdev}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pred_maint"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://pred_maint:${POSTGRES_PASSWORD:-localdev}@postgres:5432/pred_maint
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  dashboard:
+    build:
+      context: dashboard
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    depends_on:
+      api:
+        condition: service_healthy
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.13.0
+    ports:
+      - "5001:5000"
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri sqlite:////mlruns/mlflow.db
+      --default-artifact-root /mlruns/artifacts
+    volumes:
+      - mlflow_data:/mlruns
+
+volumes:
+  postgres_data:
+  mlflow_data:
