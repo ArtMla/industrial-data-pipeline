@@ -75,8 +75,8 @@ Raw Data (CSV)
 | Dataset acquired | Done |
 | S3 ingestion script | Done |
 | Data pipeline (S3 → PostgreSQL) | Done |
-| Feature engineering | In progress |
-| XGBoost model training | Pending |
+| Feature engineering | Done |
+| XGBoost model training | In progress |
 | FastAPI inference service | Pending |
 | Docker + ECS deployment | Pending |
 | Next.js dashboard | Pending |
@@ -88,13 +88,16 @@ Raw Data (CSV)
 
 ```bash
 # Install dependencies
-pip install boto3 python-dotenv
+pip install boto3 python-dotenv pandas sqlalchemy psycopg2-binary scikit-learn xgboost joblib
 
 # Configure environment
-cp .env.example .env   # fill in AWS credentials and bucket name
+cp .env.example .env   # fill in AWS credentials, S3 bucket, and PostgreSQL connection
 
-# Upload raw data to S3
+# Run the pipeline stages in order
 python scripts/upload_to_s3.py
+python scripts/load_to_postgres.py
+python scripts/feature_engineering.py
+python scripts/train_model.py
 ```
 
 ---

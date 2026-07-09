@@ -11,7 +11,7 @@ Portfolio project: an industrial predictive-maintenance data pipeline built on t
 No dependency manifest exists yet (no requirements.txt/pyproject.toml). Install ad hoc:
 
 ```bash
-pip install boto3 python-dotenv pandas sqlalchemy psycopg2-binary
+pip install boto3 python-dotenv pandas sqlalchemy psycopg2-binary scikit-learn xgboost joblib
 ```
 
 Set up environment (never commit `.env`):
@@ -26,6 +26,7 @@ Run the pipeline stages in order:
 python scripts/upload_to_s3.py        # data/raw/ai4i2020.csv -> s3://<bucket>/raw/ai4i2020.csv
 python scripts/load_to_postgres.py    # S3 -> validate -> sensor_readings table
 python scripts/feature_engineering.py # sensor_readings -> engineered features -> sensor_features table
+python scripts/train_model.py         # sensor_features -> models/xgb_*.joblib + models/metrics.csv
 ```
 
 There is no test suite, linter, or build step in this repo yet.
