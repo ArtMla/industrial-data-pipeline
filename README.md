@@ -10,29 +10,31 @@ Production-grade ML pipeline for predicting machine failures in industrial envir
 Raw Data (CSV)
      │
      ▼
-[1] S3 Ingestion          → s3://mlambo-industrial-data-2026/raw/
+[1] S3 Ingestion (etl/upload_raw.py)     → s3://<raw-bucket>/ai4i/raw/
      │
      ▼
-[2] Data Pipeline         → Load & validate into PostgreSQL (local → AWS RDS)
+[2] AWS Glue ETL (etl/glue_job.py)       → CSV → validated Parquet → s3://<processed-bucket>/features/
      │
      ▼
-[3] Feature Engineering   → Sensor-derived features, failure mode labels
+[3] Feature Load (etl/load_features.py)  → Parquet + physics-informed features (ml/features.py) → PostgreSQL `features` table
      │
      ▼
-[4] ML Model (XGBoost)    → Binary failure prediction + 5 failure mode classifiers
+[4] ML Training (ml/train.py)            → XGBoost: machine_failure + 5 failure-mode classifiers, MLflow tracking, S3 model registry
      │
      ▼
-[5] FastAPI Service        → REST endpoints for real-time inference
+[5] FastAPI Service (api/)               → /predict, /health, /metrics — async PostgreSQL prediction log
      │
      ▼
-[6] Containerisation       → Docker + AWS ECR/ECS deployment
+[6] Containerisation                     → Docker + docker-compose (api, dashboard)
      │
      ▼
-[7] Frontend Dashboard     → Next.js UI showing live predictions & sensor trends
+[7] Next.js Dashboard (dashboard/)       → KPI cards, prediction log, model metrics
      │
      ▼
-[8] CI/CD + Monitoring     → GitHub Actions, AWS CloudWatch
+[8] Infra & Ops (infra/, Makefile)       → S3/RDS/Glue/ECR setup scripts, cost-control (pause-rds/pause-ecs)
 ```
+
+See `ARCHITECTURE.md` for the architecture decision records (XGBoost vs LightGBM, FastAPI vs Flask, Parquet vs CSV, S3 model registry vs MLflow server).
 
 ---
 
@@ -58,13 +60,13 @@ Raw Data (CSV)
 | Layer | Technology |
 |---|---|
 | Storage | AWS S3 |
-| Database | PostgreSQL → AWS RDS |
-| ML | Python, XGBoost, scikit-learn |
-| API | FastAPI |
+| ETL | AWS Glue (PySpark), pandera schema validation |
+| Database | PostgreSQL (RDS) |
+| ML | Python, XGBoost, scikit-learn, MLflow |
+| API | FastAPI, asyncpg |
 | Frontend | Next.js |
 | Infra | Docker, AWS ECS/ECR |
-| CI/CD | GitHub Actions |
-| Monitoring | AWS CloudWatch |
+| Testing | pytest |
 
 ---
 
@@ -73,13 +75,15 @@ Raw Data (CSV)
 | Step | Status |
 |---|---|
 | Dataset acquired | Done |
-| S3 ingestion script | Done |
-| Data pipeline (S3 → PostgreSQL) | Done |
-| Feature engineering | Done |
-| XGBoost model training | In progress |
-| FastAPI inference service | Pending |
-| Docker + ECS deployment | Pending |
-| Next.js dashboard | Pending |
+| S3 ingestion + schema validation | Done |
+| Glue ETL (CSV → Parquet) | Done |
+| Feature load (PostgreSQL) | Done |
+| XGBoost training — machine_failure | Done |
+| XGBoost training — 5 failure-mode classifiers | Done (trained, not yet served by the API) |
+| FastAPI inference service | Done (serves machine_failure only; failure-mode breakdown in `/predict` is currently a placeholder, not the trained per-mode models) |
+| Docker + docker-compose | Done |
+| Next.js dashboard | Done |
+| AWS infra setup scripts (S3/RDS/Glue/ECR) | Done |
 | GitHub Actions CI/CD | Pending |
 
 ---
@@ -87,18 +91,24 @@ Raw Data (CSV)
 ## Getting Started
 
 ```bash
-# Install dependencies
-pip install boto3 python-dotenv pandas sqlalchemy psycopg2-binary scikit-learn xgboost joblib
+# Install Python dependencies
+pip install -e .   # or: pip install -r api/requirements.txt, plus xgboost, mlflow, pandera, boto3, psycopg2
 
 # Configure environment
-cp .env.example .env   # fill in AWS credentials, S3 bucket, and PostgreSQL connection
+cp .env.example .env   # fill in AWS credentials, S3 buckets, DATABASE_URL
 
-# Run the pipeline stages in order
-python scripts/upload_to_s3.py
-python scripts/load_to_postgres.py
-python scripts/feature_engineering.py
-python scripts/train_model.py
+make setup                # copies .env, prints the schema.sql command to run
+make upload-raw            # data/raw/ai4i2020.csv -> S3 raw bucket
+make validate-schema       # pandera validation of the local CSV
+make run-glue               # trigger the Glue ETL job (CSV -> Parquet)
+make load-features          # Parquet -> PostgreSQL features table
+make train                  # train XGBoost models, push to S3, log to MLflow
+make api                    # FastAPI dev server on :8000
+make dashboard               # Next.js dev server on :3000
+make test                   # pytest suite
 ```
+
+See `make help` for the full command list, and `infra/README.md` for one-time AWS resource setup.
 
 ---
 

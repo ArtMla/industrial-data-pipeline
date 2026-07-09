@@ -11,6 +11,11 @@ CREATE TABLE IF NOT EXISTS features (
     torque           FLOAT         NOT NULL,
     tool_wear        INTEGER       NOT NULL,
     machine_failure  BOOLEAN       NOT NULL,
+    twf              BOOLEAN       NOT NULL DEFAULT FALSE,
+    hdf              BOOLEAN       NOT NULL DEFAULT FALSE,
+    pwf              BOOLEAN       NOT NULL DEFAULT FALSE,
+    osf              BOOLEAN       NOT NULL DEFAULT FALSE,
+    rnf              BOOLEAN       NOT NULL DEFAULT FALSE,
     -- engineered features (computed by ml/features.py)
     temp_diff        FLOAT         NOT NULL,
     mechanical_power FLOAT         NOT NULL,

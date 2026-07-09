@@ -4,43 +4,49 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Portfolio project: an industrial predictive-maintenance data pipeline built on the AI4I 2020 dataset (`data/raw/ai4i2020.csv`). Currently implements the data-ingestion and feature-engineering stages of a larger planned architecture (S3 → PostgreSQL → feature engineering → XGBoost model → FastAPI service → Docker/ECS → Next.js dashboard → CI/CD). See README.md "Architecture Overview" and "Project Status" for the full roadmap and what's actually built vs. pending.
+Portfolio project: a production-shaped industrial predictive-maintenance platform built on the AI4I 2020 dataset (`data/raw/ai4i2020.csv`). Full pipeline implemented: S3 ingestion → AWS Glue ETL → PostgreSQL feature store → XGBoost training (MLflow-tracked, S3 model registry) → FastAPI inference service → Next.js dashboard → Docker/infra setup scripts. See README.md "Architecture Overview" and "Project Status" for what's built vs. pending (CI/CD is the main gap).
+
+Earlier in this project's history a simpler `scripts/` pipeline (CSV → S3 → PostgreSQL → feature engineering, no API/dashboard/infra) was built in parallel with this one on a different branch/session. It has been removed — this tree (`etl/`, `ml/`, `api/`, `dashboard/`, `infra/`) is canonical.
 
 ## Commands
 
-No dependency manifest exists yet (no requirements.txt/pyproject.toml). Install ad hoc:
-
 ```bash
-pip install boto3 python-dotenv pandas sqlalchemy psycopg2-binary scikit-learn xgboost joblib
+pip install -e .   # pyproject.toml; or install api/requirements.txt plus xgboost, mlflow, pandera, boto3, psycopg2
 ```
 
 Set up environment (never commit `.env`):
 
 ```bash
-cp .env.example .env   # fill in AWS credentials, S3 bucket, PostgreSQL connection
+cp .env.example .env   # fill in AWS credentials, S3 buckets, DATABASE_URL, MLFLOW_TRACKING_URI
 ```
 
-Run the pipeline stages in order:
+Run the pipeline stages in order (see `Makefile` for the full list):
 
 ```bash
-python scripts/upload_to_s3.py        # data/raw/ai4i2020.csv -> s3://<bucket>/raw/ai4i2020.csv
-python scripts/load_to_postgres.py    # S3 -> validate -> sensor_readings table
-python scripts/feature_engineering.py # sensor_readings -> engineered features -> sensor_features table
-python scripts/train_model.py         # sensor_features -> models/xgb_*.joblib + models/metrics.csv
+make upload-raw        # data/raw/ai4i2020.csv -> S3 raw bucket (etl/upload_raw.py)
+make validate-schema   # pandera validation of the local CSV (etl/validate_schema.py)
+make run-glue          # trigger AWS Glue job: CSV -> validated Parquet (etl/glue_job.py, PySpark, AWS-only)
+make load-features     # Parquet -> PostgreSQL `features` table, adds physics-informed features (etl/load_features.py)
+make train             # train XGBoost models, push to S3, log to MLflow (ml/train.py)
+make api                # FastAPI dev server on :8000
+make dashboard          # Next.js dev server on :3000
+make test                # pytest suite (tests/)
+make lint                # ruff
 ```
-
-There is no test suite, linter, or build step in this repo yet.
 
 ## Architecture
 
-Each script in `scripts/` is a standalone, sequential ETL stage — there's no shared library or orchestrator (no Airflow/Prefect/Dagster yet). Each script loads its own `.env` via `python-dotenv` and connects independently.
+- **`etl/`** — ingestion and transform. `upload_raw.py` pushes the CSV to S3 (embeds an MD5 checksum in object metadata). `validate_schema.py` runs a `pandera` schema against the local CSV (column types + physical value ranges) before upload. `glue_job.py` is an AWS Glue PySpark job — CSV → snake_case-renamed, range-filtered, Parquet (only runs inside Glue, not locally). `load_features.py` reads that Parquet from S3, adds engineered features via `ml/features.py`, and bulk-inserts (`TRUNCATE` + `execute_values`) into the PostgreSQL `features` table.
+- **`ml/features.py`** — pure functions (no I/O): `temp_diff`, `mechanical_power`, `wear_rate`, `overstrain_flag`, plus `build_feature_matrix` for single-row inference. Imported identically by `ml/train.py` and `api/router.py` so train-time and serve-time feature logic can't drift apart — always change both call sites' behavior together by editing this one module.
+- **`ml/train.py`** — trains 6 separate XGBoost binary classifiers: `machine_failure` (primary) plus `twf`/`hdf`/`pwf`/`osf`/`rnf` (each has a distinct physical driver, so no shared multi-label model). `scale_pos_weight` is computed per-target from the actual train-split class ratio. Each model + its metrics.json is pushed to S3 under `models/`; `machine_failure` keeps the unsuffixed `xgb_{version}.json` key for backward compatibility with `api/model_loader.py`'s `MODEL_S3_KEY`, the 5 failure-mode models use `xgb_{target}_{version}.json`. A `models/manifest_{version}.json` maps all 6 target → S3 key. MLflow logs one run per target under experiment `pred-maint-xgboost`.
+- **`ml/evaluate.py`** — precision/recall/F1/AUC-ROC + a confusion-matrix PNG per target (`docs/confusion_matrix_{target}.png`).
+- **`api/`** — FastAPI service. `model_loader.py` downloads the model at `MODEL_S3_KEY` from S3 once at startup (singleton). **Known gap:** `ModelLoader.predict()` only loads the primary `machine_failure` model — the per-target failure-mode probabilities it returns are currently fabricated by multiplying the binary probability by hardcoded ratios (0.18/0.27/0.31/0.21/0.03), not the real trained `twf`/`hdf`/`pwf`/`osf`/`rnf` models from `ml/train.py`. Wiring the real 5 models in (loading all 6 from the manifest, replacing the hardcoded-ratio block in `model_loader.py`) is unfinished follow-up work.
+- **`dashboard/`** — Next.js UI (KPI cards, prediction log, model metrics) reading from the FastAPI service.
+- **`infra/`** — one-time AWS resource setup scripts (S3, RDS, Glue, ECR) — see `infra/README.md`.
+- **`tests/`** — pytest suite covering ETL, API, and feature functions.
 
-- **`upload_to_s3.py`** — uploads the raw CSV to S3 at a fixed key (`raw/ai4i2020.csv`).
-- **`load_to_postgres.py`** — fetches the CSV from S3, validates it against `EXPECTED_COLUMNS` (raises on missing columns, nulls, or unexpected `Type` values), renames columns to snake_case, and writes to the `sensor_readings` table (full `if_exists="replace"` on every run — not incremental).
-- **`feature_engineering.py`** — reads `sensor_readings` from PostgreSQL, derives features (`temp_delta_k`, `power_w`, `tool_wear_torque`, `tool_wear_speed`, `torque_speed_ratio`) and writes `sensor_features` (also `if_exists="replace"`).
+Column naming convention: source CSV uses human-readable names with units (`Air temperature [K]`); everything downstream uses snake_case (`air_temp`, no unit suffix in this tree — differs from the removed `scripts/` tree's `air_temp_k` convention).
 
-Column naming convention: source CSV uses human-readable names with units (`Air temperature [K]`); DB tables use snake_case with unit suffixes (`air_temp_k`). When adding a new stage, follow this same rename-at-load pattern rather than carrying raw CSV column names into the database.
+Target labels carried through the pipeline: `machine_failure` (binary) plus five failure-mode flags `twf`, `hdf`, `pwf`, `osf`, `rnf` — all now present in the `features` table (`infra/schema.sql`) and loaded by `etl/load_features.py`.
 
-Both DB-writing scripts build the SQLAlchemy engine from individual `DB_*` env vars (not a single `DATABASE_URL`) and each script defines its own `CREATE_TABLE_SQL` inline (`CREATE TABLE IF NOT EXISTS`) rather than using migrations.
-
-Target labels carried through every stage: `machine_failure` (binary) plus five failure-mode flags `twf`, `hdf`, `pwf`, `osf`, `rnf`.
+See `ARCHITECTURE.md` for ADRs (XGBoost vs LightGBM, FastAPI vs Flask, Parquet vs CSV, S3 model registry vs MLflow server, RDS public-subnet tradeoff).

@@ -31,7 +31,8 @@ def bulk_insert(df: pd.DataFrame, conn) -> int:
     cols = [
         "udi", "product_id", "product_type",
         "air_temp", "process_temp", "rotational_speed", "torque", "tool_wear",
-        "machine_failure", "temp_diff", "mechanical_power", "wear_rate", "overstrain_flag",
+        "machine_failure", "twf", "hdf", "pwf", "osf", "rnf",
+        "temp_diff", "mechanical_power", "wear_rate", "overstrain_flag",
     ]
     records = [tuple(row[c] for c in cols) for _, row in df.iterrows()]
     with conn.cursor() as cur:
