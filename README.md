@@ -79,8 +79,8 @@ See `ARCHITECTURE.md` for the architecture decision records (XGBoost vs LightGBM
 | Glue ETL (CSV → Parquet) | Done |
 | Feature load (PostgreSQL) | Done |
 | XGBoost training — machine_failure | Done |
-| XGBoost training — 5 failure-mode classifiers | Done (trained, not yet served by the API) |
-| FastAPI inference service | Done (serves machine_failure only; failure-mode breakdown in `/predict` is currently a placeholder, not the trained per-mode models) |
+| XGBoost training — 5 failure-mode classifiers | Done |
+| FastAPI inference service | Done (serves machine_failure plus the 5 real per-mode models via `models/manifest_{version}.json`) |
 | Docker + docker-compose | Done |
 | Next.js dashboard | Done |
 | AWS infra setup scripts (S3/RDS/Glue/ECR) | Done |

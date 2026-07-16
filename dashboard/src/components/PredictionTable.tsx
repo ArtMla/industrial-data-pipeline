@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { postPredict } from "@/lib/api";
 import type { PredictionRow } from "@/lib/types";
 import clsx from "clsx";
+import FailureModeBreakdown from "./FailureModeBreakdown";
 
 const SAMPLE_READINGS = [
   { air_temp: 298.1, process_temp: 308.6, rotational_speed: 1551, torque: 42.8, tool_wear: 0, product_type: "M" },
@@ -14,6 +15,7 @@ const SAMPLE_READINGS = [
 export default function PredictionTable() {
   const [rows, setRows] = useState<PredictionRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const runSample = async () => {
     setLoading(true);
@@ -56,44 +58,63 @@ export default function PredictionTable() {
                 <th className="text-left p-3">Failure Prob</th>
                 <th className="text-left p-3">Status</th>
                 <th className="text-left p-3">Model</th>
+                <th className="text-left p-3"></th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
-                <tr key={row.id} className="border-b border-zinc-800 hover:bg-zinc-900/50">
-                  <td className="p-3 text-zinc-400 font-mono">#{row.id}</td>
-                  <td className="p-3 text-zinc-300">{row.air_temp?.toFixed(1) ?? "—"} K</td>
-                  <td className="p-3 text-zinc-300">{row.torque?.toFixed(1) ?? "—"} Nm</td>
-                  <td className="p-3 text-zinc-300">{row.tool_wear ?? "—"} min</td>
-                  <td className="p-3">
-                    <span
-                      className={clsx(
-                        "font-mono font-bold",
-                        (row.failure_prob ?? row.failure_probability) > 0.5
-                          ? "text-red-400"
-                          : "text-green-400"
-                      )}
+              {rows.map((row) => {
+                const isExpanded = expandedId === row.id;
+                return (
+                  <Fragment key={row.id}>
+                    <tr
+                      onClick={() => setExpandedId(isExpanded ? null : row.id)}
+                      className="border-b border-zinc-800 hover:bg-zinc-900/50 cursor-pointer"
                     >
-                      {((row.failure_prob ?? row.failure_probability) * 100).toFixed(1)}%
-                    </span>
-                  </td>
-                  <td className="p-3">
-                    <span
-                      className={clsx(
-                        "px-2 py-0.5 rounded-full text-xs font-bold",
-                        (row.predicted_failure ?? row.predicted_failure)
-                          ? "bg-red-900/50 text-red-300"
-                          : "bg-green-900/50 text-green-300"
-                      )}
-                    >
-                      {row.predicted_failure ? "FAILURE" : "OK"}
-                    </span>
-                  </td>
-                  <td className="p-3 text-zinc-500 font-mono text-xs">
-                    {(row.model_version ?? "").slice(0, 16)}…
-                  </td>
-                </tr>
-              ))}
+                      <td className="p-3 text-zinc-400 font-mono">#{row.id}</td>
+                      <td className="p-3 text-zinc-300">{row.air_temp?.toFixed(1) ?? "—"} K</td>
+                      <td className="p-3 text-zinc-300">{row.torque?.toFixed(1) ?? "—"} Nm</td>
+                      <td className="p-3 text-zinc-300">{row.tool_wear ?? "—"} min</td>
+                      <td className="p-3">
+                        <span
+                          className={clsx(
+                            "font-mono font-bold",
+                            row.failure_prob > 0.5
+                              ? "text-red-400"
+                              : "text-green-400"
+                          )}
+                        >
+                          {(row.failure_prob * 100).toFixed(1)}%
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        <span
+                          className={clsx(
+                            "px-2 py-0.5 rounded-full text-xs font-bold",
+                            row.predicted_failure
+                              ? "bg-red-900/50 text-red-300"
+                              : "bg-green-900/50 text-green-300"
+                          )}
+                        >
+                          {row.predicted_failure ? "FAILURE" : "OK"}
+                        </span>
+                      </td>
+                      <td className="p-3 text-zinc-500 font-mono text-xs">
+                        {(row.model_version ?? "").slice(0, 16)}…
+                      </td>
+                      <td className="p-3 text-zinc-500 text-xs">
+                        {isExpanded ? "▲ Hide" : "▼ Modes"}
+                      </td>
+                    </tr>
+                    {isExpanded && (
+                      <tr className="border-b border-zinc-800 bg-zinc-950/60">
+                        <td colSpan={8} className="p-0">
+                          <FailureModeBreakdown failureModes={row.failure_modes ?? {}} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
