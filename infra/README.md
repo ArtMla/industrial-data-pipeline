@@ -24,19 +24,20 @@ there's no collision.
 
 ---
 
-## 3. AWS Glue IAM Role
+## 3. AWS Glue Job Setup (resume here)
 
-Glue needs a role with two policies. Do this in the Console before running `setup_glue.py`.
+Status as of last session: raw CSV uploaded to
+`s3://mlambo-industrial-data-2026/ai4i/raw/ai4i2020.csv` (`make upload-raw`), schema
+validated locally (`make validate-schema`). Glue IAM role and job registration are
+still pending — do these steps in order:
 
-**Step-by-step:**
+**3a. Create the Glue IAM role (Console)**
 
 1. IAM → Roles → Create role
 2. Trusted entity: **AWS service** → Glue
 3. Attach managed policy: `AWSGlueServiceRole`
 4. Create an inline policy (JSON). This project uses a single bucket
-   (`mlambo-industrial-data-2026`) for both raw and processed data — set via
-   `AWS_S3_RAW_BUCKET` and `AWS_S3_PROCESSED_BUCKET` in `.env`, both pointing at the
-   same bucket:
+   (`mlambo-industrial-data-2026`) for both raw and processed data:
 
 ```json
 {
@@ -55,17 +56,56 @@ Glue needs a role with two policies. Do this in the Console before running `setu
 ```
 
 5. Name the role: `AWSGlueServiceRole-PredMaint`
-6. Copy the role ARN and set:
+6. Copy the role ARN (format: `arn:aws:iam::<account-id>:role/AWSGlueServiceRole-PredMaint`)
 
-```bash
-export GLUE_ROLE_ARN=arn:aws:iam::<account-id>:role/AWSGlueServiceRole-PredMaint
+**3b. Set `GLUE_ROLE_ARN` in `.env`**
+
+Edit `.env` and replace the placeholder value with the real ARN from step 3a6:
+
+```
+GLUE_ROLE_ARN=arn:aws:iam::<account-id>:role/AWSGlueServiceRole-PredMaint
 ```
 
-Then register the Glue job:
+**3c. Register the Glue job**
+
+`infra/setup_glue.py` is run directly (not via `make`), so it doesn't get `.env`
+auto-loaded the way `make` targets do — export it into the shell first:
 
 ```bash
+set -a; source .env; set +a
 python infra/setup_glue.py
 ```
+
+This uploads `etl/glue_job.py` to `s3://mlambo-industrial-data-2026/glue-scripts/` and
+registers/re-registers the `pred-maint-etl` job (idempotent — safe to re-run after
+editing `etl/glue_job.py`).
+
+**3d. Run it**
+
+```bash
+make run-glue
+```
+
+This calls `aws glue start-job-run --job-name pred-maint-etl` (uses `aws configure`
+credentials from step 1, not `.env`). Job reads
+`s3://mlambo-industrial-data-2026/ai4i/raw/ai4i2020.csv`, validates/renames columns, and
+writes Parquet to `s3://mlambo-industrial-data-2026/features/`.
+
+**3e. Check status**
+
+Console: AWS Glue → ETL jobs → `pred-maint-etl` → Runs tab. Or:
+
+```bash
+aws glue get-job-runs --job-name pred-maint-etl --max-results 1
+```
+
+Once it succeeds, confirm output exists:
+
+```bash
+aws s3 ls s3://mlambo-industrial-data-2026/features/
+```
+
+Then continue with `make load-features`.
 
 ---
 
