@@ -13,9 +13,14 @@ aws configure   # set Access Key, Secret, Region (eu-central-1)
 python infra/setup_s3.py
 ```
 
-Creates:
-- `pred-maint-raw` — immutable landing zone for source CSV
-- `pred-maint-processed` — Parquet features + versioned model artifacts
+Named via `AWS_S3_RAW_BUCKET` / `AWS_S3_PROCESSED_BUCKET` in `.env`. This project uses a
+single existing bucket, `mlambo-industrial-data-2026`, for both — set both env vars to
+that name and skip `setup_s3.py` (the bucket already exists):
+- raw data — immutable landing zone for source CSV (`ai4i/raw/ai4i2020.csv`)
+- processed data — Parquet features (`features/`) + versioned model artifacts (`models/`)
+
+Raw and processed objects live under different key prefixes in the same bucket, so
+there's no collision.
 
 ---
 
@@ -28,7 +33,10 @@ Glue needs a role with two policies. Do this in the Console before running `setu
 1. IAM → Roles → Create role
 2. Trusted entity: **AWS service** → Glue
 3. Attach managed policy: `AWSGlueServiceRole`
-4. Create an inline policy (JSON):
+4. Create an inline policy (JSON). This project uses a single bucket
+   (`mlambo-industrial-data-2026`) for both raw and processed data — set via
+   `AWS_S3_RAW_BUCKET` and `AWS_S3_PROCESSED_BUCKET` in `.env`, both pointing at the
+   same bucket:
 
 ```json
 {
@@ -38,10 +46,8 @@ Glue needs a role with two policies. Do this in the Console before running `setu
       "Effect": "Allow",
       "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket"],
       "Resource": [
-        "arn:aws:s3:::pred-maint-raw",
-        "arn:aws:s3:::pred-maint-raw/*",
-        "arn:aws:s3:::pred-maint-processed",
-        "arn:aws:s3:::pred-maint-processed/*"
+        "arn:aws:s3:::mlambo-industrial-data-2026",
+        "arn:aws:s3:::mlambo-industrial-data-2026/*"
       ]
     }
   ]

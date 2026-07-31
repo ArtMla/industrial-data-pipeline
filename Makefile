@@ -1,5 +1,10 @@
 .PHONY: help setup upload-raw validate-schema run-glue load-features train api dashboard test lint build-all pause-rds pause-ecs
 
+ifneq (,$(wildcard .env))
+include .env
+export
+endif
+
 help:
 	@echo ""
 	@echo "  Industrial Predictive Maintenance Platform"
